@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import '../models/avaliacao.dart';
+import '../models/visita.dart';
 import '../services/firebase_service.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -12,17 +12,27 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final FirebaseService _firebaseService = FirebaseService();
-  
+
   Timer? _refreshTimer;
   Map<String, dynamic>? _estatisticas;
-  List<Avaliacao> _ultimasAvaliacoes = [];
   bool _carregando = true;
-  
+
+  // Cores das arenas (mesmo esquema da HomeScreen)
+  final Map<String, Color> _coresArenas = {
+    'deu planta': Colors.green,
+    'deu game': Colors.purple,
+    'deu link': Colors.blue,
+    'deu curto': Colors.orange,
+    'deu alerta': Colors.red,
+    'deu cena': Colors.pink,
+    'deu pixel': Colors.cyan,
+  };
+
   @override
   void initState() {
     super.initState();
     _carregarDados();
-    
+
     // Atualiza os dados a cada 3 segundos
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 3),
@@ -39,7 +49,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _carregarDados() async {
     try {
       final stats = await _firebaseService.obterEstatisticas();
-      
+
       if (mounted) {
         setState(() {
           _estatisticas = stats;
@@ -55,32 +65,139 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  Widget _buildEstatisticaCard(String titulo, String valor, IconData icone, Color cor) {
+  Widget _buildGraficoBarras() {
+    final porArena = _estatisticas?['porArena'] as Map<String, dynamic>? ?? {};
+
+    if (porArena.isEmpty) {
+      return Card(
+        child: Container(
+          height: 600,
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.bar_chart,
+                  size: 64,
+                  color: Colors.grey,
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'Nenhuma visita registrada ainda',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Encontrar o valor máximo para normalizar as barras
+    final maxVisitas = porArena.values
+        .fold<int>(0, (max, current) => current > max ? current as int : max);
+
     return Card(
       elevation: 4,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(50),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icone, size: 48, color: cor),
-            const SizedBox(height: 16),
-            Text(
-              titulo,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              valor,
+            const Text(
+              'Visitas por Arena',
               style: TextStyle(
-                fontSize: 32,
+                fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: cor,
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Gráfico de barras
+            Container(
+              height: 400,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: _coresArenas.keys.map((arena) {
+                  final visitas = porArena[arena] as int? ?? 0;
+                  final altura =
+                      maxVisitas > 0 ? (visitas / maxVisitas) * 250 : 0.0;
+                  final cor = _coresArenas[arena]!;
+
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          // Número de visitas acima da barra
+                          if (visitas > 0)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: cor,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                visitas.toString(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+
+                          // Barra
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 800),
+                            curve: Curves.easeInOut,
+                            height: altura.clamp(20.0, 250.0),
+                            decoration: BoxDecoration(
+                              color: cor,
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(8),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: cor.withOpacity(0.3),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          // Nome da arena (horizontal)
+                          SizedBox(
+                            height: 60,
+                            child: Center(
+                              child: Text(
+                                arena.toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
             ),
           ],
@@ -89,90 +206,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildOficinaCard(String oficina, Map<String, dynamic> dados) {
-    final media = dados['media'] as double;
-    final total = dados['total'] as int;
-    
-    return Card(
-      elevation: 4,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        height: 200, // Altura fixa para manter uniformidade
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Nome da oficina (compacto)
-            Text(
-              oficina.replaceAll('Oficina de ', ''), // Remove "Oficina de" para economizar espaço
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            
-            const SizedBox(height: 12),
-            
-            // Badge com número de votos
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade100,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '$total voto${total != 1 ? 's' : ''}',
-                style: TextStyle(
-                  color: Colors.blue.shade700,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
+  Widget _buildResumoEstatisticas() {
+    final totalVisitas = _estatisticas?['total'] as int? ?? 0;
+    final porArena = _estatisticas?['porArena'] as Map<String, dynamic>? ?? {};
+    final arenasVisitadas = porArena.length;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Card(
+            elevation: 4,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.people,
+                    size: 48,
+                    color: Colors.blue.shade600,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    totalVisitas.toString(),
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade600,
+                    ),
+                  ),
+                  const Text(
+                    'Total de Visitas',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
               ),
             ),
-            
-            const Spacer(),
-            
-            // Estrelas
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(5, (index) {
-                return Icon(
-                  index < media.round() ? Icons.star : Icons.star_border,
-                  color: Colors.amber,
-                  size: 20,
-                );
-              }),
-            ),
-            
-            const SizedBox(height: 8),
-            
-            // Nota centralizada
-            Center(
-              child: Text(
-                media.toStringAsFixed(1),
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.amber,
-                ),
-              ),
-            ),
-            
-            const SizedBox(height: 8),
-            
-            // Barra de progresso
-            LinearProgressIndicator(
-              value: media / 5,
-              backgroundColor: Colors.grey.shade200,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                media >= 4 ? Colors.green :
-                media >= 3 ? Colors.orange : Colors.red,
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Card(
+            elevation: 4,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.place,
+                    size: 48,
+                    color: Colors.green.shade600,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    arenasVisitadas.toString(),
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green.shade600,
+                    ),
+                  ),
+                  const Text(
+                    'Arenas Visitadas',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -186,20 +296,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    final stats = _estatisticas ?? {};
-    final totalVotos = stats['total'] as int? ?? 0;
-    final mediaGeral = stats['media'] as double? ?? 0.0;
-    final porOficina = stats['porOficina'] as Map<String, dynamic>? ?? {};
-
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
         title: const Text(
-          'Dashboard de Resultados - Tempo Real',
+          'Informações de Visitas às Arenas',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
-        backgroundColor: Colors.blue.shade600,
+        backgroundColor: Colors.indigo.shade600,
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
@@ -223,228 +328,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Estatísticas Gerais
-            Row(
-              children: [
-                Expanded(
-                  child: _buildEstatisticaCard(
-                    'Total de Votos',
-                    totalVotos.toString(),
-                    Icons.how_to_vote,
-                    Colors.blue.shade600,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildEstatisticaCard(
-                    'Média Geral',
-                    mediaGeral.toStringAsFixed(1),
-                    Icons.star,
-                    Colors.amber.shade600,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildEstatisticaCard(
-                    'Oficinas Avaliadas',
-                    porOficina.length.toString(),
-                    Icons.business,
-                    Colors.green.shade600,
-                  ),
-                ),
-              ],
-            ),
-            
+            // Resumo das estatísticas
+            _buildResumoEstatisticas(),
+
             const SizedBox(height: 32),
-            
-            // Resultados por Oficina
-            const Text(
-              'Resultados por Oficina',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            
-            const SizedBox(height: 16),
-            
-            if (porOficina.isEmpty)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.inbox,
-                          size: 64,
-                          color: Colors.grey.shade400,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Nenhuma avaliação registrada ainda',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else
-              // Grid de resultados por oficina - máximo 2 linhas
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  // Calcula quantos itens cabem por linha baseado na largura
-                  final itemWidth = 280.0; // Largura de cada card
-                  final itemsPerRow = (constraints.maxWidth / (itemWidth + 16)).floor().clamp(1, 6);
-                  final totalItems = porOficina.length;
-                  final rows = (totalItems / itemsPerRow).ceil().clamp(1, 2); // Máximo 2 linhas
-                  final itemsInFirstRow = itemsPerRow;
-                  final itemsInSecondRow = totalItems > itemsPerRow ? totalItems - itemsPerRow : 0;
-                  
-                  final oficinasEntries = porOficina.entries.toList();
-                  
-                  return Column(
-                    children: [
-                      // Primeira linha
-                      SizedBox(
-                        height: 220,
-                        child: Row(
-                          children: [
-                            for (int i = 0; i < itemsInFirstRow && i < totalItems; i++)
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                                  child: _buildOficinaCard(
-                                    oficinasEntries[i].key,
-                                    oficinasEntries[i].value,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      
-                      // Segunda linha (se houver itens suficientes)
-                      if (itemsInSecondRow > 0) ...[
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          height: 220,
-                          child: Row(
-                            children: [
-                              for (int i = itemsInFirstRow; i < totalItems; i++)
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    child: _buildOficinaCard(
-                                      oficinasEntries[i].key,
-                                      oficinasEntries[i].value,
-                                    ),
-                                  ),
-                                ),
-                              // Preenche espaços vazios se necessário para manter alinhamento
-                              for (int i = itemsInSecondRow; i < itemsInFirstRow; i++)
-                                const Expanded(child: SizedBox()),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  );
-                },
-              ),
-              
-            const SizedBox(height: 32),
-            
-            // Últimas Avaliações em Tempo Real
-            const Text(
-              'Últimas Avaliações (Tempo Real)',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            
-            const SizedBox(height: 16),
-            
-            StreamBuilder<List<Avaliacao>>(
-              stream: _firebaseService.obterAvaliacoes(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text('Erro ao carregar: ${snapshot.error}'),
-                    ),
-                  );
-                }
-                
-                final avaliacoes = snapshot.data ?? [];
-                
-                if (avaliacoes.isEmpty) {
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Center(
-                        child: Text(
-                          'Aguardando primeira avaliação...',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                
-                return Card(
-                  child: Column(
-                    children: avaliacoes.take(10).map((avaliacao) {
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.blue.shade100,
-                          child: Icon(
-                            Icons.star,
-                            color: Colors.blue.shade600,
-                          ),
-                        ),
-                        title: Text(
-                          avaliacao.oficina,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          'Há ${DateTime.now().difference(avaliacao.timestamp).inMinutes} minutos',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ...List.generate(5, (i) {
-                              return Icon(
-                                i < avaliacao.nota ? Icons.star : Icons.star_border,
-                                color: Colors.amber,
-                                size: 18,
-                              );
-                            }),
-                            const SizedBox(width: 8),
-                            Text(
-                              avaliacao.nota.toString(),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                );
-              },
-            ),
+
+            // Gráfico de barras
+            _buildGraficoBarras(),
           ],
         ),
       ),

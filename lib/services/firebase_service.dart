@@ -1,67 +1,23 @@
 // lib/services/firebase_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/avaliacao.dart';
+import '../models/visita.dart';
 
 class FirebaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final String _collection = 'avaliacoes';
+  final String _collection = 'visitas';
 
-  // NOVA FUNÇÃO: Verificar se dispositivo já votou
-  Future<bool> dispositivoJaVotou(String deviceId) async {
+  // Registrar visita à arena (sem verificação de duplicação)
+  Future<bool> registrarVisita(Visita visita) async {
     try {
-      final query = await _firestore
-          .collection(_collection)
-          .where('deviceId', isEqualTo: deviceId)
-          .limit(1)
-          .get();
-      
-      return query.docs.isNotEmpty;
-    } catch (e) {
-      print('Erro ao verificar dispositivo: $e');
-      return false; // Em caso de erro, permite votar
-    }
-  }
-
-  // NOVA FUNÇÃO: Verificar se dispositivo votou em oficina específica
-  Future<bool> dispositivoJaVotouOficina(String deviceId, String oficina) async {
-    try {
-      final query = await _firestore
-          .collection(_collection)
-          .where('deviceId', isEqualTo: deviceId)
-          .where('oficina', isEqualTo: oficina)
-          .limit(1)
-          .get();
-      
-      return query.docs.isNotEmpty;
-    } catch (e) {
-      print('Erro ao verificar voto na oficina: $e');
-      return false;
-    }
-  }
-
-  // FUNÇÃO ATUALIZADA: Salvar com verificação
-  Future<bool> salvarAvaliacaoComVerificacao(Avaliacao avaliacao) async {
-    try {
-      // Verifica se já votou
-      final jaVotou = await dispositivoJaVotou(avaliacao.deviceId);
-      if (jaVotou) {
-        throw Exception('Este dispositivo já registrou uma avaliação');
-      }
-
-      await _firestore.collection(_collection).add(avaliacao.toMap());
+      await _firestore.collection(_collection).add(visita.toMap());
       return true;
     } catch (e) {
-      throw Exception('Erro ao salvar avaliação: $e');
+      throw Exception('Erro ao registrar visita: $e');
     }
   }
 
-  // Função original mantida para compatibilidade
-  Future<void> salvarAvaliacao(Avaliacao avaliacao) async {
-    await salvarAvaliacaoComVerificacao(avaliacao);
-  }
-
-  // Resto das funções permanecem iguais...
-  Stream<List<Avaliacao>> obterAvaliacoes() {
+  // Obter stream de visitas em tempo real
+  Stream<List<Visita>> obterVisitas() {
     return _firestore
         .collection(_collection)
         .orderBy('timestamp', descending: true)
@@ -70,18 +26,19 @@ class FirebaseService {
       return snapshot.docs
           .map((doc) {
             try {
-              return Avaliacao.fromMap(doc.data(), doc.id);
+              return Visita.fromMap(doc.data(), doc.id);
             } catch (e) {
               print('Erro ao processar documento ${doc.id}: $e');
               return null;
             }
           })
-          .where((avaliacao) => avaliacao != null)
-          .cast<Avaliacao>()
+          .where((visita) => visita != null)
+          .cast<Visita>()
           .toList();
     });
   }
 
+  // Obter estatísticas das visitas por arena
   Future<Map<String, dynamic>> obterEstatisticas() async {
     try {
       final snapshot = await _firestore.collection(_collection).get();
@@ -89,55 +46,38 @@ class FirebaseService {
       if (snapshot.docs.isEmpty) {
         return {
           'total': 0,
-          'media': 0.0,
-          'porOficina': <String, dynamic>{},
+          'porArena': <String, int>{},
         };
       }
 
-      final List<Avaliacao> avaliacoes = [];
-      
+      final List<Visita> visitas = [];
+
       for (final doc in snapshot.docs) {
         try {
-          final avaliacao = Avaliacao.fromMap(doc.data(), doc.id);
-          avaliacoes.add(avaliacao);
+          final visita = Visita.fromMap(doc.data(), doc.id);
+          visitas.add(visita);
         } catch (e) {
           print('❌ Erro ao processar documento ${doc.id}: $e');
         }
       }
 
-      if (avaliacoes.isEmpty) {
+      if (visitas.isEmpty) {
         return {
           'total': 0,
-          'media': 0.0,
-          'porOficina': <String, dynamic>{},
+          'porArena': <String, int>{},
         };
       }
 
-      final Map<String, List<int>> porOficina = {};
-      
-      for (final avaliacao in avaliacoes) {
-        porOficina.putIfAbsent(avaliacao.oficina, () => []);
-        porOficina[avaliacao.oficina]!.add(avaliacao.nota);
+      // Contabilizar visitas por arena
+      final Map<String, int> porArena = {};
+
+      for (final visita in visitas) {
+        porArena[visita.arena] = (porArena[visita.arena] ?? 0) + 1;
       }
-
-      final Map<String, dynamic> estatisticasPorOficina = {};
-      
-      porOficina.forEach((oficina, notas) {
-        final media = notas.reduce((a, b) => a + b) / notas.length;
-        estatisticasPorOficina[oficina] = {
-          'total': notas.length,
-          'media': media,
-        };
-      });
-
-      final mediaGeral = avaliacoes
-          .map((a) => a.nota)
-          .reduce((a, b) => a + b) / avaliacoes.length;
 
       return {
-        'total': avaliacoes.length,
-        'media': mediaGeral,
-        'porOficina': estatisticasPorOficina,
+        'total': visitas.length,
+        'porArena': porArena,
       };
     } catch (e) {
       throw Exception('Erro ao obter estatísticas: $e');

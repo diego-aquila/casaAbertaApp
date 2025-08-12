@@ -5,7 +5,7 @@ import 'screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Configuração do Firebase para Web
   await Firebase.initializeApp(
     options: const FirebaseOptions(
@@ -18,7 +18,7 @@ void main() async {
       measurementId: "G-1FFNM8TJD1",
     ),
   );
-  
+
   runApp(const MyApp());
 }
 
@@ -28,6 +28,11 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      routes: {
+        "/": (ontext) => const HomeScreen(),
+        "/dashboard": (ontext) => const DashboardScreen(),
+      },
+      initialRoute: "/",
       title: 'Avaliação de Stands',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -39,8 +44,6 @@ class MyApp extends StatelessWidget {
         ),
       ),
       // home: const DashboardScreen(),
-            home: const HomeScreen(),
-
     );
   }
 }
